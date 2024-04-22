@@ -484,3 +484,32 @@ func gasSelfdestruct(evm *EVM, contract *Contract, stack *Stack, mem *Memory, me
 	}
 	return gas, nil
 }
+
+func gasAuthCreate(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
+	gas, err := memoryGasCost(mem, memorySize)
+	if err != nil {
+		return 0, err
+	}
+	size, overflow := stack.Back(2).Uint64WithOverflow()
+	if overflow || size > params.MaxInitCodeSize {
+		return 0, ErrGasUintOverflow
+	}
+	// Since size <= params.MaxInitCodeSize, these multiplication cannot overflow
+	moreGas := (params.InitCodeWordGas + params.Keccak256WordGas) * ((size + 31) / 32)
+	if gas, overflow = math.SafeAdd(gas, moreGas); overflow {
+		return 0, ErrGasUintOverflow
+	}
+
+	yParity := mem.GetCopy(int64(stack.Back(1).Uint64()), 1)[0]
+	ecrecoverGas := uint64(0)
+	if yParity <= 1 {
+		ecrecoverGas = 3000
+	} else {
+		return 0, ErrAuthCreateSigType
+	}
+
+	if gas, overflow = math.SafeAdd(gas, ecrecoverGas); overflow {
+		return 0, ErrGasUintOverflow
+	}
+	return gas, nil
+}
